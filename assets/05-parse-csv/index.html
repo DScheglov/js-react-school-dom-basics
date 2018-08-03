@@ -1,0 +1,231 @@
+<html>
+  <head>
+    <title>Paylist Totals</title>
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+      integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
+      crossorigin="anonymous"
+    >
+
+    <script type="text/javascript" src="./csv-mock.js">
+    // import { readFile } from './csv-mock';
+    </script>
+
+    <script type="text/javascript" src="./utils.js">
+    // import { compose } from './utils';
+    </script>
+
+    <script type="text/javascript">
+
+    /*
+     * CSV PARSING PART ===============================================: general
+     */
+
+    const Payment = rowStr => {
+      const parts = rowStr.split(',');
+      return {
+        month: parts[0],
+        department: parts[1],
+        empoyee: parts[2],
+        amount: parseFloat(parts[3]),
+      };
+    };
+
+    const hasValidAmount = payment => !isNaN(payment.amount);
+
+    const parseFile = body => body
+      .split('\n')  // getting rows
+      .map(Payment) // mapping each row (incl. header and last empty to Payment)
+      .filter(hasValidAmount); // filtering by keeping payments with valid amount only
+
+    /*
+     * CALCULATION PART ===============================================: general
+     */
+
+    const sumCountAvg = ({ sum = 0, count = 0 } = {}, value) => ({
+      sum: sum += value,
+      count: count += 1,
+      average: sum / count,
+    });
+
+    const generalTotals = dataField => items => items.reduce(
+      (state, item) => sumCountAvg(state, item[dataField]),
+      {}
+    );
+
+    const groupTotals = (key, dataField) => items => items.reduce(
+      (state, item) => ({ // reducere
+        ...state, 
+        [item[key]]: sumCountAvg(state[item[key]], item[dataField]),
+      }),
+      {} // initialState
+    );
+
+    const toItem = key => totalsByGroup => Object.keys(totalsByGroup) // array of group names
+      .sort() // sorting by name of group
+      .map(
+        groupName => ({ // mapper
+          ...totalsByGroup[groupName], // object with totals returned from groupTotals
+          [key]: groupName,
+        })
+      );
+    
+    const groupBy = (key, dataField) => compose(
+      toItem(key),
+      groupTotals(key, dataField),
+    );
+
+    /*
+     * VIEW PART ======================================================: general
+     */
+
+    const LocalNumber = new Intl.NumberFormat('ru-UA', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    const formatNumber = value => (
+      typeof value === 'number'
+        ? LocalNumber.format(value)
+        : value
+    );
+
+    // helper to map list to htmlString-s and then join them
+    const map = (list, mapper) => list.map(mapper).join('');
+
+    const Cell = ({ align, value }) => (
+      `<td style="text-align: ${align}">
+        ${formatNumber(value)}
+      </td>`
+    );
+
+    const Row = ({ aligns, fields, dataObj }) => (
+      `<tr>
+        ${map(fields,
+          (field, index) => Cell({
+            align: aligns[index],
+            value: dataObj[field],
+          })
+        )}
+      </tr>`
+    );
+
+    const ColumnHeader = ({ align, name }) => (
+      `<th style="text-align: ${align}">
+        ${name}
+      </th>`
+    );
+
+    const Table = ({ names, aligns, fields, data }) => (
+      `<table class="table table-striped table-bordered">
+        <thead>
+          <tr>
+            ${map(names,
+              (name, index) => ColumnHeader({ align: aligns[index], name })
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          ${map(data,
+            dataObj => Row({ aligns, fields, dataObj })
+          )}
+        </tbody>
+      </table>`
+    );
+
+    const render = (Component, mountPoint) => {
+      mountPoint.innerHTML = Component;
+    }
+
+    /*
+     * APPLICATION PART ==========================================: calculations
+     */
+
+    const totalsByMonth = groupBy('month', 'amount');
+    const totalsByDep = groupBy('department', 'amount');
+    const total = generalTotals('amount');
+
+    const buildAppData = payments => ({
+      total: total(payments), 
+      byMonth: totalsByMonth(payments),
+      byDep: totalsByDep(payments),
+    });
+
+    /*
+     * APPLICATION PART ==================================================: view
+     */
+
+    const App = ({ total, byMonth, byDep }) => (
+      `<div class="container">
+        <header class="bg-light">
+          <div class="pt-md-3 pb-md-4">
+            <h1 class="bd-title mt-0">Paylist Totals</h1>              
+          </div>
+        </header>
+        <br />
+        <div class="row">
+          <div class="col-md-3">
+            ${Table({
+              names: ['Total'],
+              aligns: ['right'],
+              fields: ['sum'],
+              data: [total], // total contains a single object,
+                             // but data should be an array of objects
+            })}
+          </div>
+        </div>
+        <br />
+        <div class="row">
+          <div class="col-md-6">
+            ${Table({
+              names: ['Month', 'Avg.Amount'],
+              aligns: ['left', 'right'],
+              fields: ['month', 'average'],
+              data: byMonth,
+            })}
+          </div>
+        </div>
+        <br />
+        <div class="row">
+          <div class="col-md-6">
+            ${Table({
+              names: ['Department', 'Avg.Amount'],
+              aligns: ['left', 'right'],
+              fields: ['department', 'average'],
+              data: byDep,
+            })}
+          </div>
+        </div>
+      </div>`
+    );
+
+    /*
+     * APPLICATION PART ===========================================: composition
+     */
+    
+    // Composing application from building blocks prepared before
+
+    function main() { // aka void main() { ... }
+      const fileBody = readFile();
+      const payments = parseFile(fileBody);
+      const appData = buildAppData(payments);
+      const appHTML = App(appData);
+      return appHTML;
+    };
+
+    // or just:
+    //
+    // const main = compose(App, buildAppData, parseFile, readFile);
+
+    </script>
+  </head>
+  <body>
+  </body>
+  <script>
+    /*
+    * MOUNTING PART =================================================
+    */
+    render(main(), document.body);
+  </script>
+</html>
